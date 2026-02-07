@@ -1,0 +1,1788 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Realistic Rail Simulation (Pure HTML Canvas)</title>
+  <style>
+    :root{
+      --bg0:#061a3a;
+      --bg1:#0b3a6a;
+      --bg2:#ff8a3d;
+      --bg3:#050814;
+
+      --cyan:#64f0ff;
+      --cyan2:#2dd6ff;
+      --green:#48ff8a;
+
+      --glass: rgba(18, 38, 60, .28);
+      --glass2: rgba(0,0,0,.16);
+      --stroke: rgba(120, 240, 255, .35);
+      --stroke2: rgba(120, 240, 255, .18);
+      --text: rgba(235, 250, 255, .92);
+      --muted: rgba(235, 250, 255, .72);
+
+      --warn: rgba(255, 198, 64, 1);
+      --danger: rgba(255, 86, 86, 1);
+
+      --r: 16px;
+      --pad: 14px;
+    }
+
+    html,body{height:100%; margin:0; background:var(--bg3); overflow:hidden; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial;}
+    #scene{position:fixed; inset:0; width:100vw; height:100vh; display:block; background:var(--bg3);}
+
+    /* HUD layout */
+    .hud{
+      position:fixed; inset:0;
+      pointer-events:none;
+    }
+    .col{
+      position:absolute; top:18px; bottom:18px;
+      width:min(320px, 34vw);
+      display:flex; flex-direction:column; gap:12px;
+      pointer-events:none;
+    }
+    .left{left:18px;}
+    .right{right:18px;}
+
+    .card{
+      pointer-events:none;
+      background:var(--glass);
+      border:1px solid var(--stroke);
+      border-radius: var(--r);
+      padding: var(--pad);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 18px 60px rgba(0,0,0,.28);
+    }
+    .card.compact{padding:12px 14px;}
+    .row{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+    .title{
+      font-size:12px;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color:var(--muted);
+      margin:0 0 8px;
+      display:flex; align-items:center; gap:8px;
+    }
+    .value{
+      font-size:26px;
+      font-weight:700;
+      color:var(--text);
+      line-height:1.1;
+    }
+    .unit{font-size:14px; font-weight:600; color:var(--muted); margin-left:6px;}
+    .sub{
+      font-size:12px;
+      color:var(--muted);
+      margin-top:6px;
+      display:flex; gap:10px; flex-wrap:wrap;
+    }
+    .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--stroke2);
+      background:var(--glass2);
+      font-size:12px;
+    }
+
+    .icon{
+      width:18px; height:18px; display:inline-block;
+      opacity:.95;
+      filter: drop-shadow(0 0 10px rgba(100,240,255,.15));
+    }
+    .icon svg{width:100%; height:100%;}
+
+    /* Charts inside cards */
+    .chart{
+      width:100%;
+      height:140px;
+      border-radius: 12px;
+      background: rgba(0,0,0,.10);
+      border: 1px solid rgba(120,240,255,.14);
+      display:block;
+    }
+
+    /* Top gauge */
+    .topGauge{
+      position:absolute;
+      top:120px; /* Moved down slightly to make room for text */
+      left:50%;
+      transform:translateX(-50%);
+      width:min(320px, 48vw);
+      aspect-ratio: 1 / 1;
+      pointer-events:none;
+    }
+    #gauge{
+      width:100%; height:100%;
+      display:block;
+      background: transparent;
+    }
+
+    /* Top Center Title Overlay */
+    .center-title {
+      position: absolute;
+      top: 20px; /* Positioned at the top */
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      pointer-events: none;
+      z-index: 20;
+      width: 100%;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+    }
+    .center-title h1 {
+      font-size: 1.2rem; /* Reduced size */
+      font-weight: 600;
+      margin: 0;
+      color: #fff;
+      line-height: 1.4;
+    }
+    .center-title h2 {
+      font-size: 1.1rem; /* Similar size */
+      color: var(--cyan);
+      margin: 0;
+      font-weight: 500;
+    }
+    .center-title h3 {
+      font-size: 1.0rem; /* Similar size */
+      color: rgba(235, 250, 255, 0.85);
+      margin: 0;
+      font-weight: 400;
+    }
+    @media (max-width: 768px) {
+      .center-title { top: 15px; }
+      .center-title h1 { font-size: 1.0rem; }
+      .center-title h2 { font-size: 0.95rem; }
+      .center-title h3 { font-size: 0.9rem; }
+      .topGauge { top: 100px; width:min(240px, 50vw); }
+    }
+
+    /* Bottom controls */
+    .controls{
+      position:absolute;
+      left:50%;
+      bottom:22px;
+      transform:translateX(-50%);
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      border-radius: 18px;
+      background: var(--glass);
+      border: 1px solid var(--stroke);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 18px 60px rgba(0,0,0,.30);
+      pointer-events:auto;
+    }
+    .btn{
+      cursor:pointer;
+      border-radius: 14px;
+      padding:10px 14px;
+      border: 1px solid rgba(120,240,255,.30);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      font-weight:600;
+      letter-spacing:.02em;
+      user-select:none;
+      transition: all 0.2s;
+    }
+    .btn:hover{border-color: rgba(120,240,255,.70); background: rgba(0,0,0,.25);}
+    .btn:active{transform: scale(0.96);}
+    .btn.primary{
+      background: rgba(100,240,255,.18);
+      border-color: rgba(120,240,255,.60);
+      box-shadow: 0 0 24px rgba(100,240,255,.10);
+    }
+    .btn.voice {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(100, 255, 160, 0.12);
+      border-color: rgba(100, 255, 160, 0.4);
+      color: #cdffdc;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn.voice:hover {
+      background: rgba(100, 255, 160, 0.22);
+      border-color: rgba(100, 255, 160, 0.8);
+    }
+    .btn.pa-system {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(255, 200, 100, 0.12);
+      border-color: rgba(255, 200, 100, 0.4);
+      color: #ffecc0;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn.pa-system:hover {
+      background: rgba(255, 200, 100, 0.22);
+      border-color: rgba(255, 200, 100, 0.8);
+    }
+    /* Loading shimmer for AI */
+    .btn.voice.loading::after, .btn.pa-system.loading::after {
+      content: "";
+      position: absolute;
+      top: 0; left: -100%;
+      width: 50%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+      animation: shimmer 1s infinite;
+    }
+    @keyframes shimmer { 100% { left: 150%; } }
+    
+    .select, .range{
+      border-radius: 14px;
+      padding:10px 12px;
+      border: 1px solid rgba(120,240,255,.30);
+      background: rgba(0,0,0,.16);
+      color: var(--text);
+      font-weight:600;
+      outline:none;
+    }
+    .label{
+      font-size:12px;
+      color: var(--muted);
+      letter-spacing:.10em;
+      text-transform:uppercase;
+      margin-right:4px;
+      display: none; /* Hidden on small screens, shown via media query if needed */
+    }
+    @media (min-width: 600px) { .label { display: inline; } }
+
+    .range{padding:10px 12px;}
+    .speedRead{
+      font-size:12px;
+      color: var(--muted);
+      padding:6px 10px;
+      border:1px solid rgba(120,240,255,.18);
+      background: rgba(0,0,0,.14);
+      border-radius:999px;
+      white-space:nowrap;
+    }
+
+    /* Status coloring */
+    .status.normal .value{color:var(--text)}
+    .status.warning{border-color: rgba(255,198,64,.65)}
+    .status.warning .value{color: var(--warn)}
+    .status.danger{border-color: rgba(255,86,86,.70)}
+    .status.danger .value{color: var(--danger)}
+
+    /* AI Message Toast */
+    .ai-message {
+      position: fixed;
+      top: 100px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      width: min(500px, 90vw);
+      background: rgba(10, 20, 35, 0.85);
+      border: 1px solid var(--cyan);
+      box-shadow: 0 0 30px rgba(100, 240, 255, 0.2);
+      border-radius: 12px;
+      padding: 16px;
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1.5;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.4s ease;
+      z-index: 100;
+      backdrop-filter: blur(8px);
+    }
+    .ai-message.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .ai-message strong {
+      color: var(--cyan);
+      display: block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+    }
+
+    /* Responsive: collapse side panels on very small screens */
+    @media (max-width: 860px){
+      .col{width:min(280px, 46vw)}
+      .value{font-size:22px}
+      .controls{flex-wrap:wrap; justify-content:center; width:min(92vw, 720px)}
+    }
+    @media (max-width: 640px){
+      .left{left:10px}
+      .right{right:10px}
+      .col{width:calc(50vw - 18px); top: 10px; bottom: 80px; overflow-y: auto;}
+      .card { padding: 10px; }
+      .chart{height:80px}
+      /* Title and Gauge adjust for mobile */
+      .center-title { top: 10px; }
+      .topGauge{width:min(200px, 50vw); top: 90px;}
+      
+      .controls { bottom: 10px; padding: 8px; gap: 6px; }
+      .btn { padding: 8px 12px; font-size: 13px; }
+      .ai-message { top: 60px; font-size: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="aiToast" class="ai-message">
+    <strong>RailOS Intelligence</strong>
+    <span id="aiText">System Online.</span>
+  </div>
+
+  <div class="hud">
+    <div class="center-title">
+      <h1>การประยุกต์ใช้ AI สำหรับระบบรถขนส่งทางราง</h1>
+      <h2>สาขาช่างเทคนิคระบบอัตโนมัติและหุ่นยนต์ วิทยาลัยเทคนิคนราธิวาส</h2>
+      <h3>มหาวิทยาลัยนราธิวาสราชนครินทร์</h3>
+    </div>
+
+    <div class="topGauge">
+      <canvas id="gauge" width="420" height="420"></canvas>
+    </div>
+
+    <div class="col left">
+      <div class="card compact">
+        <div class="title">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M13 2L4 14h7l-1 8 10-14h-7l0-6z" stroke="rgba(100,240,255,.9)" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          Battery Capacity
+        </div>
+        <div class="row">
+          <div class="value"><span id="cap">1.2</span><span class="unit">MWh</span></div>
+          <div class="pill"><span style="color:rgba(100,240,255,.95)">●</span> Live</div>
+        </div>
+      </div>
+
+      <div class="card compact">
+        <div class="title">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M7 7h10v14H7V7z" stroke="rgba(100,240,255,.9)" stroke-width="1.8"/>
+              <path d="M9 3h6v3H9V3z" stroke="rgba(100,240,255,.9)" stroke-width="1.8"/>
+            </svg>
+          </span>
+          SOC
+        </div>
+        <div class="value"><span id="soc">85</span><span class="unit">%</span></div>
+        <div class="sub">
+          <span class="pill">Drain: <span id="drain">—</span></span>
+          <span class="pill">Target: <span id="targetSpeed">120</span> km/h</span>
+        </div>
+      </div>
+
+      <div class="card compact">
+        <div class="title">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4 18a8 8 0 1 1 16 0" stroke="rgba(100,240,255,.9)" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M12 10l3 3" stroke="rgba(100,240,255,.9)" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          Range
+        </div>
+        <div class="value"><span id="range">450</span><span class="unit">km</span></div>
+      </div>
+
+      <div class="card">
+        <div class="title">Regen (kW)</div>
+        <canvas id="regenChart" class="chart" width="520" height="220"></canvas>
+      </div>
+
+      <div id="statusCard" class="card status normal">
+        <div class="title">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 9v4" stroke="rgba(100,240,255,.9)" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M12 17h.01" stroke="rgba(100,240,255,.9)" stroke-width="2.4" stroke-linecap="round"/>
+              <path d="M10.3 4.8l-8 14A2 2 0 0 0 4 22h16a2 2 0 0 0 1.7-3.2l-8-14a2 2 0 0 0-3.4 0z"
+                    stroke="rgba(100,240,255,.9)" stroke-width="1.6" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          Status
+        </div>
+        <div class="value" id="statusText">NORMAL</div>
+        <div class="sub">
+          <span class="pill">SOC alert &lt; 20%</span>
+          <span class="pill">Temp alert &gt; 80°C</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col right">
+      <div class="card compact">
+        <div class="title">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M13 2L4 14h7l-1 8 10-14h-7l0-6z" stroke="rgba(100,240,255,.9)" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          Power Draw
+        </div>
+        <div class="value"><span id="power">350</span><span class="unit">kW</span></div>
+      </div>
+
+      <div class="card compact">
+        <div class="title">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M20 12a8 8 0 1 1-16 0" stroke="rgba(100,240,255,.9)" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M12 12l5-2" stroke="rgba(100,240,255,.9)" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          Motor Efficiency
+        </div>
+        <div class="value"><span id="eff">94</span><span class="unit">%</span></div>
+      </div>
+
+      <div class="card compact">
+        <div class="title">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M14 14.8V5a2 2 0 1 0-4 0v9.8a4 4 0 1 0 4 0z" stroke="rgba(100,240,255,.9)" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          Temperature
+        </div>
+        <div class="value"><span id="temp">65</span><span class="unit">°C</span></div>
+      </div>
+
+      <div class="card compact">
+        <div class="title">Voltage</div>
+        <div class="value"><span id="volt">25.0</span><span class="unit">kV</span></div>
+      </div>
+
+      <div class="card compact">
+        <div class="title">Current</div>
+        <div class="value"><span id="curr">140</span><span class="unit">A</span></div>
+      </div>
+
+      <div class="card">
+        <div class="title">Power History</div>
+        <canvas id="powerChart" class="chart" width="520" height="220"></canvas>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="btnVoice" class="btn voice">
+        <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        RailOS AI
+      </button>
+
+      <button id="btnPA" class="btn pa-system">
+        <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" style="display:none;"/>
+          <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+        📢 PA Announce
+      </button>
+
+      <button id="btnStartPause" class="btn primary">Pause</button>
+      <button id="btnReset" class="btn">Reset</button>
+
+      <div style="display:flex; align-items:center; gap:6px">
+        <span class="label">Scenario</span>
+        <select id="scenario" class="select">
+          <option value="normal">Normal ops</option>
+          <option value="uphill">Uphill climb</option>
+          <option value="heavy">Heavy load</option>
+          <option value="rain">Heavy Rain</option>
+          <option value="snow">Heavy Snow</option>
+          <option value="storm">Heavy Storm</option>
+          <option value="custom" hidden>Custom (AI)</option>
+        </select>
+        <button id="btnGenScenario" class="btn" title="Create AI Scenario" style="padding:10px 10px;">✨</button>
+      </div>
+
+      <span class="label">Speed</span>
+      <input id="speed" class="range" type="range" min="20" max="220" value="120" />
+      <span class="speedRead"><span id="speedKmh">120</span> km/h</span>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ------------------------------
+  // API Configuration (Gemini)
+  // ------------------------------
+  let apiKey = ""; // System will inject key at runtime or prompt user
+
+  // ------------------------------
+  // Helpers
+  // ------------------------------
+  const clamp = (x,a,b)=>Math.max(a, Math.min(b,x));
+  const lerp  = (a,b,t)=>a+(b-a)*t;
+  const rand  = (a,b)=>a+Math.random()*(b-a);
+
+  // ------------------------------
+  // Canvas setup (scene)
+  // ------------------------------
+  const scene = document.getElementById('scene');
+  const ctx = scene.getContext('2d');
+
+  let W = 0, H = 0, DPR = 1;
+
+  function resize(){
+    DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    W = Math.floor(window.innerWidth);
+    H = Math.floor(window.innerHeight);
+    scene.width  = Math.floor(W * DPR);
+    scene.height = Math.floor(H * DPR);
+    scene.style.width = W + 'px';
+    scene.style.height = H + 'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ------------------------------
+  // Gauge canvas
+  // ------------------------------
+  const gaugeCanvas = document.getElementById('gauge');
+  const gctx = gaugeCanvas.getContext('2d');
+
+  function resizeGauge(){
+    // keep crisp: match CSS size
+    const rect = gaugeCanvas.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    gaugeCanvas.width = Math.floor(rect.width * dpr);
+    gaugeCanvas.height = Math.floor(rect.height * dpr);
+    gctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener('resize', resizeGauge);
+  resizeGauge();
+
+  // ------------------------------
+  // UI elements
+  // ------------------------------
+  const el = (id)=>document.getElementById(id);
+
+  const capEl   = el('cap');
+  const socEl   = el('soc');
+  const rangeEl = el('range');
+  const powerEl = el('power');
+  const effEl   = el('eff');
+  const tempEl  = el('temp');
+  const voltEl  = el('volt');
+  const currEl  = el('curr');
+  const drainEl = el('drain');
+  const statusCard = el('statusCard');
+  const statusText = el('statusText');
+  const aiToast = el('aiToast');
+  const aiText = el('aiText');
+
+  const btnStartPause = el('btnStartPause');
+  const btnReset = el('btnReset');
+  const btnVoice = el('btnVoice'); 
+  const btnPA = el('btnPA'); // New PA button
+  const btnGenScenario = el('btnGenScenario'); 
+  const scenarioSel = el('scenario');
+  const speedSlider = el('speed');
+  const speedRead = el('speedKmh');
+  const targetSpeedEl = el('targetSpeed');
+
+  // Charts
+  const regenChart = el('regenChart');
+  const powerChart = el('powerChart');
+  const rctx = regenChart.getContext('2d');
+  const pctx = powerChart.getContext('2d');
+
+  // Make charts crisp with DPR
+  function resizeSmallCanvas(c){
+    const rect = c.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    c.width = Math.floor(rect.width * dpr);
+    c.height = Math.floor(rect.height * dpr);
+    const cctx = c.getContext('2d');
+    cctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function resizeCharts(){
+    resizeSmallCanvas(regenChart);
+    resizeSmallCanvas(powerChart);
+  }
+  window.addEventListener('resize', resizeCharts);
+  resizeCharts();
+
+  // ------------------------------
+  // Simulation state
+  // ------------------------------
+  let running = true;
+
+  const sim = {
+    capacityMWh: 1.2,
+    soc: 85.0,
+    speed: 120.0,
+    targetSpeed: 120.0,
+    powerKW: 350.0,
+    regenKW: 0.0,
+    efficiency: 94.0,
+    tempC: 65.0,
+    voltageKV: 25.0,
+    currentA: 140.0,
+    rangeKM: 450.0,
+    scenario: 'normal'
+  };
+
+  let customScenarioData = null; // Store AI generated scenario factors
+
+  // Rolling data
+  const N = 48;
+  const regenHist = Array.from({length:N}, ()=>rand(0,40));
+  const powerHist = Array.from({length:N}, ()=>rand(220,420));
+
+  function scenarioFactors(name){
+    // Custom AI scenario
+    if (name === 'custom' && customScenarioData) return customScenarioData;
+
+    // Built-in Scenario effects (tuneable with Ambient Temp)
+    // ambientC: Ambient Temperature in Celsius (Normal ~32C, Rain ~24C, Snow ~-5C)
+    // effDelta: Efficiency penalty
+    if (name === 'uphill') return { powerMul: 1.35, regenMul: 0.55, effDelta: -2.5, ambientC: 28, rangeMul: 0.75 };
+    if (name === 'heavy')  return { powerMul: 1.40, regenMul: 0.65, effDelta: -3.5, ambientC: 32, rangeMul: 0.70 };
+    if (name === 'rain')   return { powerMul: 1.15, regenMul: 0.40, effDelta: -6.0, ambientC: 24, rangeMul: 0.85 };
+    if (name === 'snow')   return { powerMul: 1.30, regenMul: 0.25, effDelta: -12.0, ambientC: -5, rangeMul: 0.60 }; // Cold drains battery
+    if (name === 'storm')  return { powerMul: 1.25, regenMul: 0.50, effDelta: -9.0, ambientC: 20, rangeMul: 0.78 };
+    return { powerMul: 1.00, regenMul: 1.00, effDelta: 0.0,  ambientC: 32,  rangeMul: 1.00 }; // Normal
+  }
+
+  // Controls
+  speedSlider.addEventListener('input', () => {
+    sim.targetSpeed = Number(speedSlider.value);
+    speedRead.textContent = String(sim.targetSpeed);
+    targetSpeedEl.textContent = String(sim.targetSpeed);
+  });
+  scenarioSel.addEventListener('change', () => {
+    sim.scenario = scenarioSel.value;
+  });
+
+  btnStartPause.addEventListener('click', () => {
+    running = !running;
+    btnStartPause.textContent = running ? 'Pause' : 'Start';
+  });
+
+  btnReset.addEventListener('click', () => {
+    sim.soc = 85;
+    sim.speed = sim.targetSpeed;
+    sim.tempC = 65;
+    sim.powerKW = 350;
+    sim.regenKW = 0;
+    sim.efficiency = 94;
+    regenHist.fill(0);
+    powerHist.fill(300);
+  });
+
+  // ------------------------------
+  // RailOS AI Logic (Gemini Powered)
+  // ------------------------------
+  function ensureApiKey() {
+    if (!apiKey) {
+      const input = prompt("กรุณากรอก Google Gemini API Key ของคุณเพื่อเริ่มใช้งาน AI:");
+      if (input) apiKey = input.trim();
+    }
+    return !!apiKey;
+  }
+
+  async function getGeminiAnalysis(context) {
+    if (!ensureApiKey()) {
+      alert("จำเป็นต้องใช้ API Key เพื่อใช้งานฟีเจอร์นี้");
+      return null;
+    }
+
+    const prompt = `
+      Act as "RailOS", an advanced AI train operating system.
+      The driver has requested a status check.
+      
+      Current Telemetry:
+      - Speed: ${context.speed.toFixed(1)} km/h
+      - Motor Temp: ${context.tempC.toFixed(1)}°C (Danger > 80°C)
+      - Battery SOC: ${context.soc.toFixed(1)}% (Low < 20%)
+      - Scenario Mode: ${context.scenario}
+      - Efficiency: ${context.efficiency.toFixed(1)}%
+      
+      Instructions:
+      1. Analyze the data for any urgent warnings (Overheat, Low Battery).
+      2. If all is normal, give a concise, professional status update or a driving tip.
+      3. Roleplay as a futuristic AI interface.
+      4. Respond in THAI language only.
+      5. Keep response short (under 2 sentences) for TTS.
+    `;
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+
+      const data = await response.json();
+      return data.candidates[0].content.parts[0].text;
+    } catch (e) {
+      console.warn("Gemini Error (using fallback):", e);
+      return null;
+    }
+  }
+
+  // New: AI Passenger Announcement
+  async function getGeminiPA(context) {
+    if (!ensureApiKey()) {
+      alert("จำเป็นต้องใช้ API Key เพื่อใช้งานฟีเจอร์นี้");
+      return null;
+    }
+
+    const prompt = `
+      Act as a Train Conductor.
+      Context: Speed ${context.speed.toFixed(0)} km/h, Scenario: ${context.scenario}.
+      
+      Task: Generate a SHORT PA announcement in THAI ONLY (Max 1 sentence).
+      - STRICTLY NO ENGLISH.
+      - Example > 150km/h: "ขณะนี้รถไฟใช้ความเร็วสูง โปรดทรงตัวให้ดี"
+      - Example < 20km/h: "สถานีต่อไป... สยาม ผู้โดยสารโปรดระวังช่องว่างระหว่างขบวนรถ"
+      - Normal: "ยินดีต้อนรับสู่ RailOS ขอให้ทุกท่านเดินทางโดยสวัสดิภาพ"
+      - Tone: Formal, concise, clear.
+    `;
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+
+      const data = await response.json();
+      return data.candidates[0].content.parts[0].text;
+    } catch (e) {
+      console.warn("Gemini PA Error:", e);
+      return null;
+    }
+  }
+
+  // New: AI Scenario Generator
+  async function getGeminiScenario(description) {
+    if (!ensureApiKey()) {
+      alert("จำเป็นต้องใช้ API Key เพื่อใช้งานฟีเจอร์นี้");
+      return null;
+    }
+
+    const prompt = `
+      Generate a JSON object for a train simulation scenario based on: "${description}".
+      
+      Fields required (return ONLY raw JSON, no markdown formatting):
+      - name: Short title (string, e.g., "Snowstorm")
+      - powerMul: Power consumption multiplier (float 0.5-2.0, normal 1.0)
+      - regenMul: Regeneration efficiency multiplier (float 0.1-1.5, normal 1.0)
+      - effDelta: Efficiency change percent (float -10.0 to +5.0, normal 0.0)
+      - ambientC: Ambient temperature in Celsius (float -20 to 40, normal 32)
+      - rangeMul: Range estimator multiplier (float 0.5-1.2, normal 1.0)
+    `;
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        })
+      });
+
+      const data = await response.json();
+      const text = data.candidates[0].content.parts[0].text;
+      return JSON.parse(text);
+    } catch (e) {
+      console.warn("Gemini Scenario Error:", e);
+      return null;
+    }
+  }
+
+  function speak(text) {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const ut = new SpeechSynthesisUtterance(text);
+    ut.lang = 'th-TH';
+    const voices = window.speechSynthesis.getVoices();
+    const thVoice = voices.find(v => v.lang.includes('th'));
+    if (thVoice) ut.voice = thVoice;
+    window.speechSynthesis.speak(ut);
+  }
+
+  function showToastMessage(text) {
+    aiText.textContent = text;
+    aiToast.classList.add('show');
+    setTimeout(() => {
+      aiToast.classList.remove('show');
+    }, 6000);
+  }
+
+  // RailOS AI Button
+  btnVoice.addEventListener('click', async () => {
+    btnVoice.classList.add('loading');
+    const originalText = btnVoice.innerHTML;
+    btnVoice.innerHTML = `Analysing...`;
+    
+    try {
+      let text = await getGeminiAnalysis(sim);
+      if (!text) {
+        if (sim.tempC > 80) text = `แจ้งเตือนความร้อนสูง ${sim.tempC.toFixed(0)} องศา ระบบกำลังระบายความร้อน กรุณาลดความเร็ว`;
+        else if (sim.soc < 20) text = `ระดับพลังงานต่ำเหลือ ${sim.soc.toFixed(0)} เปอร์เซ็นต์ กรุณาเตรียมชาร์จ`;
+        else if (sim.scenario === 'uphill') text = `กำลังไต่ระดับความชัน ประสิทธิภาพมอเตอร์ลดลงเล็กน้อยที่ ${sim.efficiency.toFixed(0)} เปอร์เซ็นต์`;
+        else text = `ระบบ Rail OS ปกติ ความเร็ว ${sim.speed.toFixed(0)} กิโลเมตรต่อชั่วโมง เดินทางปลอดภัยครับ`;
+      }
+      speak(text);
+      showToastMessage(text);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      btnVoice.classList.remove('loading');
+      btnVoice.innerHTML = originalText;
+    }
+  });
+
+  // PA Announcement Button
+  btnPA.addEventListener('click', async () => {
+    btnPA.classList.add('loading');
+    const originalText = btnPA.innerHTML;
+    btnPA.innerHTML = `Gen AI...`;
+    
+    try {
+      let text = await getGeminiPA(sim);
+      if (!text) {
+        text = "ท่านผู้โดยสารโปรดทราบ ขณะนี้รถไฟกำลังวิ่งด้วยความเร็วปกติ ขอบคุณที่ใช้บริการครับ";
+      }
+      speak(text);
+      showToastMessage(`📢 ${text}`);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      btnPA.classList.remove('loading');
+      btnPA.innerHTML = originalText;
+    }
+  });
+
+  // Handler for Scenario Generator
+  btnGenScenario.addEventListener('click', async () => {
+    // Check API key first
+    if (!ensureApiKey()) {
+      alert("จำเป็นต้องใช้ API Key เพื่อสร้างสถานการณ์จำลอง");
+      return;
+    }
+
+    const userDesc = prompt("Describe driving conditions (e.g. 'Heavy snow storm with slippery tracks'):");
+    if(!userDesc) return;
+
+    btnGenScenario.textContent = "⏳";
+    
+    const factors = await getGeminiScenario(userDesc);
+    
+    if(factors) {
+      customScenarioData = factors;
+      
+      const opt = scenarioSel.querySelector('option[value="custom"]');
+      opt.hidden = false;
+      opt.textContent = `✨ ${factors.name || 'Custom'}`;
+      scenarioSel.value = 'custom';
+      sim.scenario = 'custom';
+      
+      const msg = `Scenario generated: ${factors.name}`;
+      showToastMessage(msg);
+      speak(`ปรับระบบจำลองสำหรับสถานการณ์ ${factors.name} เรียบร้อยแล้ว`);
+    } else {
+      alert("Failed to generate scenario. Check API Key or try again.");
+    }
+    
+    btnGenScenario.textContent = "✨";
+  });
+
+
+  // ------------------------------
+  // Perspective functions (key realism)
+  // ------------------------------
+  // z in [0..1] depth: 0 = far/horizon, 1 = near/bottom
+  const P = {
+    horizonY: 0.38,     // fraction of height
+    gamma: 1.60,        // perspective curve (bigger = more compression at distance)
+    trackTopW: 0.06,    // half track width near horizon (fraction of W)
+    trackBotW: 0.30,    // half track width near camera (fraction of W)
+    trackPow: 0.92,     // width growth curve
+    zSpeed: 0.60,       // depth speed scale
+    sleeperCount: 36,
+    poleCount: 18,
+    ballastCount: 900
+  };
+
+  function yFromZ(z){
+    const hy = H * P.horizonY;
+    return hy + (H - hy) * Math.pow(z, P.gamma);
+  }
+  function halfTrackW(z){
+    const t = Math.pow(z, P.trackPow);
+    return lerp(W * P.trackTopW, W * P.trackBotW, t);
+  }
+
+  // ------------------------------
+  // World objects (depth-based loops)
+  // ------------------------------
+  // Sleepers: evenly spaced in world-space -> represented by z positions
+  let sleepers = Array.from({length:P.sleeperCount}, (_, i)=>({ z: i / P.sleeperCount }));
+
+  // Ballast stones: procedural points that move with depth
+  let stones = Array.from({length:P.ballastCount}, () => ({
+    z: Math.random(),
+    lat: rand(-1.35, 1.35),   // lateral multiplier (outside rails too)
+    s: rand(0.6, 2.2),        // size
+    a: rand(0.05, 0.22)       // alpha base
+  }));
+
+  // Catenary poles: repeating frames on both sides
+  let poles = Array.from({length:P.poleCount}, (_, i)=>({
+    z: (i / P.poleCount),
+    side: (i % 2 === 0) ? -1 : 1,  // alternate side
+    wob: rand(-0.06, 0.06)
+  }));
+
+  // New: Weather particles
+  const weatherParticles = Array.from({length: 400}, () => ({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    speed: rand(10, 25),
+    len: rand(10, 20)
+  }));
+  let lightningTimer = 0;
+  let isLightning = false;
+
+  // ------------------------------
+  // Rendering: background + track + train + catenary
+  // ------------------------------
+  function drawBackground(){
+    // Check weather for darkening
+    const isStorm = sim.scenario === 'storm';
+    const isRain = sim.scenario === 'rain';
+    
+    // dusk gradient (darker if storm)
+    const g = ctx.createLinearGradient(0,0,0,H);
+    if(isStorm) {
+        // Very dark, stormy sky
+        g.addColorStop(0,   '#020408');
+        g.addColorStop(0.45,'#0a0f1c');
+        g.addColorStop(0.62,'#1a1f2e'); 
+        g.addColorStop(1,   '#050814');
+    } else if (isRain) {
+        // Grey, rainy sky
+        g.addColorStop(0,   '#0a1525');
+        g.addColorStop(0.45,'#152030');
+        g.addColorStop(0.62,'#2a3545');
+        g.addColorStop(1,   '#050814');
+    } else {
+        // Normal dusk
+        g.addColorStop(0,   '#061a3a');
+        g.addColorStop(0.45,'#0b3a6a');
+        g.addColorStop(0.62,'#ff8a3d');
+        g.addColorStop(0.72,'#0a1022');
+        g.addColorStop(1,   '#050814');
+    }
+    
+    // Lightning flash logic
+    if (isStorm && isLightning) {
+        ctx.fillStyle = '#ffffff'; // Flash white
+        ctx.fillRect(0,0,W,H);
+        // Reduce flash quickly
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.fillRect(0,0,W,H);
+    } else {
+        ctx.fillStyle = g;
+        ctx.fillRect(0,0,W,H);
+    }
+
+    // Sun glow at horizon (hide if storm/rain)
+    if (!isStorm && !isRain) {
+        const hy = H * P.horizonY;
+        ctx.save();
+        ctx.globalAlpha = 0.28;
+        ctx.filter = 'blur(16px)';
+        ctx.fillStyle = '#ffb56b';
+        ctx.beginPath();
+        ctx.arc(W*0.5, hy + 10, Math.min(W,H)*0.16, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // vignette
+    ctx.save();
+    const v = ctx.createRadialGradient(W*0.5, H*0.55, 80, W*0.5, H*0.55, Math.max(W,H)*0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  }
+
+  // Draw Weather Effects
+  function drawWeather(dt) {
+    const type = sim.scenario;
+    if (type !== 'rain' && type !== 'storm' && type !== 'snow') return;
+
+    // Logic for rain/snow movement
+    const isSnow = type === 'snow';
+    const speedX = - (sim.speed / 10); // Horizontal speed based on train speed
+    const speedY = isSnow ? 150 : 850; // Rain falls faster
+
+    ctx.save();
+    ctx.lineWidth = isSnow ? 0 : 2;
+    
+    for (let p of weatherParticles) {
+        // Move
+        p.y += speedY * dt;
+        p.x += speedX * dt;
+
+        // Reset if out of bounds
+        if (p.y > H) {
+            p.y = -20;
+            p.x = Math.random() * W;
+        }
+        if (p.x < 0) {
+            p.x = W + 20;
+        }
+
+        // Draw
+        if (isSnow) {
+            // Snow
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, rand(1.5, 3), 0, Math.PI*2);
+            ctx.fill();
+        } else {
+            // Rain (line)
+            ctx.strokeStyle = 'rgba(180, 220, 255, 0.4)';
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            // Angle based on speed
+            ctx.lineTo(p.x + speedX * 0.05, p.y + p.len);
+            ctx.stroke();
+        }
+    }
+    ctx.restore();
+
+    // Lightning update logic
+    if (type === 'storm') {
+        if (lightningTimer <= 0) {
+            // Random chance to strike
+            if (Math.random() < 0.005) {
+                isLightning = true;
+                lightningTimer = 0.1; // Flash duration
+            }
+        } else {
+            lightningTimer -= dt;
+            if (lightningTimer <= 0) isLightning = false;
+        }
+    }
+  }
+
+  function drawTrack(dt){
+    const cx = W*0.5;
+    const hy = H * P.horizonY;
+
+    // ground/ballast base
+    ctx.save();
+    const ground = ctx.createLinearGradient(0, hy, 0, H);
+    ground.addColorStop(0, 'rgba(20,35,65,0.0)');
+    ground.addColorStop(0.25,'rgba(10,14,28,0.75)');
+    ground.addColorStop(1, 'rgba(5,8,20,0.95)');
+    ctx.fillStyle = ground;
+    ctx.fillRect(0, hy, W, H-hy);
+    ctx.restore();
+
+    // track glow corridor
+    ctx.save();
+    const topW = halfTrackW(0);
+    const botW = halfTrackW(1);
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath();
+    ctx.moveTo(cx - topW*1.55, hy);
+    ctx.lineTo(cx - botW*1.55, H);
+    ctx.lineTo(cx + botW*1.55, H);
+    ctx.lineTo(cx + topW*1.55, hy);
+    ctx.closePath();
+    const glowGrad = ctx.createLinearGradient(0, hy, 0, H);
+    glowGrad.addColorStop(0, 'rgba(100,240,255,0.10)');
+    glowGrad.addColorStop(1, 'rgba(100,240,255,0.02)');
+    ctx.fillStyle = glowGrad;
+    ctx.fill();
+    ctx.restore();
+
+    // ballast stones (procedural)
+    const vZ = (sim.speed/220) * P.zSpeed;
+    if (running) {
+      for (const s of stones){
+        s.z += vZ * dt;
+        if (s.z > 1) s.z -= 1;
+      }
+    }
+    // draw stones back-to-front for nicer overlap
+    stones.sort((a,b)=>a.z-b.z);
+
+    for (const s of stones){
+      const z = s.z;
+      const y = yFromZ(z);
+      const hw = halfTrackW(z) * 1.65;
+      const x = cx + s.lat * hw;
+      const size = lerp(0.4, 3.2, Math.pow(z, 1.35)) * s.s;
+
+      const a = s.a * lerp(0.25, 1.0, Math.pow(z, 1.1));
+      ctx.fillStyle = `rgba(180, 235, 255, ${a})`;
+      ctx.fillRect(x, y, size, size*0.8);
+    }
+
+    // sleepers (ties) - world-even spacing -> perspective compressed
+    const v = (sim.speed/220) * P.zSpeed;
+    if (running) {
+      for (const sl of sleepers){
+        sl.z += v * dt;
+        if (sl.z > 1) sl.z -= 1;
+      }
+    }
+    sleepers.sort((a,b)=>a.z-b.z);
+
+    for (const sl of sleepers){
+      const z = sl.z;
+      const y = yFromZ(z);
+
+      const hw = halfTrackW(z);
+      const left = cx - hw;
+      const right = cx + hw;
+
+      const sleeperW = (right - left) * 0.95;
+      const sleeperH = lerp(2, 12, Math.pow(z, 1.18));
+
+      const x = cx - sleeperW/2;
+
+      // a bit brighter near camera
+      const a = lerp(0.06, 0.24, Math.pow(z, 1.05));
+      ctx.fillStyle = `rgba(140, 220, 255, ${a})`;
+      ctx.fillRect(x, y, sleeperW, sleeperH);
+    }
+
+    // rails (steel)
+    // draw thicker dark base then cyan highlight
+    const railStroke = (alpha)=>`rgba(120,240,255,${alpha})`;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    // Base dark steel
+    ctx.strokeStyle = 'rgba(10,14,28,0.95)';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfTrackW(1), H);
+    ctx.lineTo(cx - halfTrackW(0), hy);
+    ctx.moveTo(cx + halfTrackW(1), H);
+    ctx.lineTo(cx + halfTrackW(0), hy);
+    ctx.stroke();
+
+    // Mid steel
+    ctx.strokeStyle = 'rgba(60,120,170,0.25)';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfTrackW(1), H);
+    ctx.lineTo(cx - halfTrackW(0), hy);
+    ctx.moveTo(cx + halfTrackW(1), H);
+    ctx.lineTo(cx + halfTrackW(0), hy);
+    ctx.stroke();
+
+    // Cyan highlight
+    ctx.strokeStyle = railStroke(0.28);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfTrackW(1), H);
+    ctx.lineTo(cx - halfTrackW(0), hy);
+    ctx.moveTo(cx + halfTrackW(1), H);
+    ctx.lineTo(cx + halfTrackW(0), hy);
+    ctx.stroke();
+    ctx.restore();
+
+    // subtle speed streak near bottom (motion cue)
+    ctx.save();
+    const near = ctx.createLinearGradient(0, H*0.65, 0, H);
+    near.addColorStop(0, 'rgba(0,0,0,0)');
+    near.addColorStop(1, 'rgba(100,240,255,0.12)');
+    ctx.strokeStyle = near;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = clamp((sim.speed-40)/180, 0, 1) * 0.7;
+    ctx.filter = 'blur(1px)';
+    for (let i=0;i<18;i++){
+      const t = i/18;
+      const x = lerp(cx - halfTrackW(1)*1.25, cx + halfTrackW(1)*1.25, t);
+      ctx.beginPath();
+      ctx.moveTo(x, H);
+      ctx.lineTo(lerp(cx - halfTrackW(0)*1.05, cx + halfTrackW(0)*1.05, t), hy);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCatenary(dt, time){
+    const cx = W*0.5;
+    const hy = H * P.horizonY;
+    const v = (sim.speed/220) * P.zSpeed;
+
+    if (running) {
+      for (const p of poles){
+        p.z += v * dt;
+        if (p.z > 1) p.z -= 1;
+      }
+    }
+    poles.sort((a,b)=>a.z-b.z);
+
+    // overhead wires: converging lines to vanishing point (simple but effective)
+    const vpX = cx;
+    const vpY = hy - 10;
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(120,240,255,0.18)';
+    ctx.lineWidth = 1;
+
+    // multiple wires
+    for (const off of [-0.35, -0.18, 0.18, 0.35]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + off*W*0.45, 0);
+      ctx.lineTo(vpX, vpY);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // poles and crossbeams
+    for (const p of poles){
+      const z = p.z;
+      const y = yFromZ(z);
+      const hw = halfTrackW(z);
+      const sideX = cx + p.side * (hw*1.55 + hw*0.25*p.wob);
+
+      const poleH = lerp(50, 420, Math.pow(z, 1.15));
+      const topY = y - poleH;
+
+      // fade with distance
+      const a = lerp(0.08, 0.45, Math.pow(z, 1.1));
+
+      ctx.save();
+      ctx.globalAlpha = a;
+
+      // pole
+      ctx.strokeStyle = 'rgba(160, 230, 255, 0.65)';
+      ctx.lineWidth = lerp(1, 4, Math.pow(z, 1.2));
+      ctx.beginPath();
+      ctx.moveTo(sideX, y);
+      ctx.lineTo(sideX, topY);
+      ctx.stroke();
+
+      // crossbeam
+      const beamW = lerp(25, 130, Math.pow(z, 1.2));
+      ctx.lineWidth = lerp(1, 3, Math.pow(z, 1.1));
+      ctx.beginPath();
+      ctx.moveTo(sideX, topY + poleH*0.18);
+      ctx.lineTo(sideX - p.side*beamW, topY + poleH*0.18);
+      ctx.stroke();
+
+      // short hanger line to wire direction
+      ctx.strokeStyle = 'rgba(120,240,255,0.30)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sideX - p.side*beamW*0.85, topY + poleH*0.18);
+      ctx.lineTo(vpX, vpY);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // top-center subtle HUD reticle glow on scene (optional)
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#64f0ff';
+    ctx.filter = 'blur(22px)';
+    ctx.beginPath();
+    ctx.arc(cx, hy-10, 110, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawTrain(time){
+    const cx = W*0.5;
+    const hy = H * P.horizonY;
+
+    // place train near center but below horizon like reference
+    const baseY = lerp(hy + 150, H*0.70, 0.62);
+    const bob = Math.sin(time*2.4) * 2.2;
+    const y = baseY + bob;
+
+    const trainW = Math.min(W*0.26, 320);
+    const trainH = trainW * 1.35;
+
+    // shadow on track
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.filter = 'blur(10px)';
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + trainH*0.45, trainW*0.50, trainW*0.13, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    // metallic body gradient
+    const bodyG = ctx.createLinearGradient(cx-trainW/2, y-trainH/2, cx+trainW/2, y+trainH/2);
+    bodyG.addColorStop(0,   '#1d4a7a');
+    bodyG.addColorStop(0.25,'#2dd6ff');
+    bodyG.addColorStop(0.52,'#0b1730');
+    bodyG.addColorStop(0.78,'#7af6ff');
+    bodyG.addColorStop(1,   '#123a66');
+
+    // body shape
+    ctx.save();
+    ctx.fillStyle = bodyG;
+    ctx.beginPath();
+    ctx.moveTo(cx - trainW*0.48, y + trainH*0.48);
+    ctx.quadraticCurveTo(cx - trainW*0.62, y + trainH*0.10, cx - trainW*0.34, y - trainH*0.34);
+    ctx.quadraticCurveTo(cx,                  y - trainH*0.62, cx + trainW*0.34, y - trainH*0.34);
+    ctx.quadraticCurveTo(cx + trainW*0.62, y + trainH*0.10, cx + trainW*0.48, y + trainH*0.48);
+    ctx.quadraticCurveTo(cx,               y + trainH*0.58, cx - trainW*0.48, y + trainH*0.48);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(120,240,255,0.30)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+
+    // windshield glass
+    const glassG = ctx.createLinearGradient(0, y-trainH*0.55, 0, y+trainH*0.08);
+    glassG.addColorStop(0, 'rgba(5,12,28,0.95)');
+    glassG.addColorStop(1, 'rgba(10,25,55,0.92)');
+
+    ctx.save();
+    ctx.fillStyle = glassG;
+    ctx.beginPath();
+    const gw = trainW*0.72, gh = trainH*0.50;
+    const gx = cx - gw/2, gy = y - trainH*0.45;
+    ctx.moveTo(gx + gw*0.10, gy + gh);
+    ctx.quadraticCurveTo(gx - gw*0.02, gy + gh*0.45, gx + gw*0.12, gy + gh*0.12);
+    ctx.quadraticCurveTo(cx,           gy - gh*0.10, gx + gw*0.88, gy + gh*0.12);
+    ctx.quadraticCurveTo(gx + gw*1.02, gy + gh*0.45, gx + gw*0.90, gy + gh);
+    ctx.quadraticCurveTo(cx,           gy + gh*1.10, gx + gw*0.10, gy + gh);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(120,240,255,0.22)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    // headlights glow
+    const hlY = y + trainH*0.02;
+    const off = trainW*0.26;
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.shadowColor = '#7fffff';
+    ctx.shadowBlur = 28;
+    ctx.fillStyle = 'rgba(120,240,255,0.92)';
+    ctx.beginPath(); ctx.arc(cx-off, hlY, trainW*0.06, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+off, hlY, trainW*0.06, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // light bar
+    ctx.save();
+    ctx.globalAlpha = 0.82;
+    ctx.shadowColor = '#64f0ff';
+    ctx.shadowBlur = 26;
+    ctx.fillStyle = 'rgba(120,240,255,0.65)';
+    const barW = trainW*0.94;
+    const barH = Math.max(6, trainW*0.03);
+    roundRect(ctx, cx-barW/2, y + trainH*0.15, barW, barH, barH/2);
+    ctx.fill();
+    ctx.restore();
+
+    // green indicators
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.shadowColor = '#48ff8a';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = 'rgba(80,255,160,0.82)';
+    for (const dx of [-trainW*0.14, 0, trainW*0.14]) {
+      ctx.beginPath();
+      ctx.arc(cx + dx, y + trainH*0.34, trainW*0.03, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // specular highlight (adds "3D realism")
+    ctx.save();
+    ctx.globalAlpha = 0.20;
+    ctx.filter = 'blur(2px)';
+    ctx.fillStyle = '#b7f7ff';
+    ctx.beginPath();
+    ctx.moveTo(cx - trainW*0.32, y + trainH*0.42);
+    ctx.quadraticCurveTo(cx - trainW*0.50, y + trainH*0.08, cx - trainW*0.22, y - trainH*0.30);
+    ctx.quadraticCurveTo(cx - trainW*0.06, y - trainH*0.52, cx,                y - trainH*0.58);
+    ctx.quadraticCurveTo(cx - trainW*0.10, y - trainH*0.40, cx - trainW*0.14, y - trainH*0.12);
+    ctx.quadraticCurveTo(cx - trainW*0.18, y + trainH*0.16, cx - trainW*0.18, y + trainH*0.36);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function roundRect(c, x, y, w, h, r){
+    const rr = Math.min(r, w/2, h/2);
+    c.beginPath();
+    c.moveTo(x+rr, y);
+    c.arcTo(x+w, y, x+w, y+h, rr);
+    c.arcTo(x+w, y+h, x, y+h, rr);
+    c.arcTo(x, y+h, x, y, rr);
+    c.arcTo(x, y, x+w, y, rr);
+    c.closePath();
+  }
+
+  // ------------------------------
+  // HUD: Gauge + Charts
+  // ------------------------------
+  function drawGauge(time){
+    const rect = gaugeCanvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    const cx = w/2;
+    const cy = h/2;
+    const r = Math.min(w,h)*0.36;
+
+    gctx.clearRect(0,0,w,h);
+
+    // soft glow
+    gctx.save();
+    gctx.globalAlpha = 0.18;
+    gctx.filter = 'blur(14px)';
+    gctx.fillStyle = '#64f0ff';
+    gctx.beginPath();
+    gctx.arc(cx, cy, r*1.10, 0, Math.PI*2);
+    gctx.fill();
+    gctx.restore();
+
+    // rings
+    for (let i=0;i<4;i++){
+      gctx.save();
+      gctx.globalAlpha = 0.40 - i*0.08;
+      gctx.strokeStyle = 'rgba(120,240,255,0.55)';
+      gctx.lineWidth = 2;
+      gctx.beginPath();
+      gctx.arc(cx, cy, r + i*18, -Math.PI*0.10, Math.PI*1.10);
+      gctx.stroke();
+      gctx.restore();
+    }
+
+    // ticks
+    gctx.save();
+    gctx.translate(cx, cy);
+    const rot = time*0.20;
+    for (let i=0;i<60;i++){
+      const a = (i/60)*Math.PI*2 + rot;
+      const big = (i%5===0);
+      const r1 = r*0.75;
+      const r2 = big ? r*1.02 : r*0.92;
+      gctx.strokeStyle = big ? 'rgba(120,240,255,0.75)' : 'rgba(120,240,255,0.30)';
+      gctx.lineWidth = big ? 2 : 1;
+      gctx.beginPath();
+      gctx.moveTo(Math.cos(a)*r1, Math.sin(a)*r1);
+      gctx.lineTo(Math.cos(a)*r2, Math.sin(a)*r2);
+      gctx.stroke();
+    }
+    // pointer arc showing speed ratio
+    const ratio = clamp(sim.speed/220, 0, 1);
+    gctx.strokeStyle = 'rgba(100,240,255,0.85)';
+    gctx.lineWidth = 6;
+    gctx.lineCap = 'round';
+    gctx.beginPath();
+    gctx.arc(0, 0, r*0.62, -Math.PI*0.65, -Math.PI*0.65 + ratio*Math.PI*1.3);
+    gctx.stroke();
+
+    // center dot
+    gctx.fillStyle = 'rgba(120,240,255,0.90)';
+    gctx.beginPath();
+    gctx.arc(0, 0, 5, 0, Math.PI*2);
+    gctx.fill();
+
+    gctx.restore();
+
+    // numeric readout
+    gctx.save();
+    gctx.fillStyle = 'rgba(235,250,255,0.92)';
+    gctx.font = '700 18px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    gctx.textAlign = 'center';
+    gctx.fillText(sim.speed.toFixed(0) + ' km/h', cx, cy + r*0.70);
+    gctx.restore();
+  }
+
+  function drawBarChart(cctx, canvasEl, data, maxVal, color){
+    const rect = canvasEl.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+
+    cctx.clearRect(0,0,w,h);
+
+    // grid
+    cctx.save();
+    cctx.strokeStyle = 'rgba(120,240,255,0.12)';
+    cctx.lineWidth = 1;
+    for (let i=1;i<=3;i++){
+      const y = (h/4)*i;
+      cctx.beginPath();
+      cctx.moveTo(10, y);
+      cctx.lineTo(w-10, y);
+      cctx.stroke();
+    }
+    cctx.restore();
+
+    const padX = 12;
+    const padY = 14;
+    const innerW = w - padX*2;
+    const innerH = h - padY*2;
+
+    const n = data.length;
+    const gap = 2;
+    const barW = Math.max(3, (innerW / n) - gap);
+
+    // draw bars
+    for (let i=0;i<n;i++){
+      const v = clamp(data[i]/maxVal, 0, 1);
+      const x = padX + i*(barW+gap);
+      const bh = innerH * v;
+      const y = padY + (innerH - bh);
+
+      // glow bar
+      cctx.save();
+      cctx.shadowColor = color;
+      cctx.shadowBlur = 10;
+      cctx.fillStyle = color;
+      cctx.globalAlpha = 0.65;
+      cctx.fillRect(x, y, barW, bh);
+      cctx.restore();
+
+      // core bar
+      cctx.fillStyle = 'rgba(100,240,255,0.85)';
+      cctx.globalAlpha = 0.85;
+      cctx.fillRect(x, y, barW, bh);
+      cctx.globalAlpha = 1;
+    }
+  }
+
+  function drawLineChart(cctx, canvasEl, data, minVal, maxVal, color){
+    const rect = canvasEl.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+
+    cctx.clearRect(0,0,w,h);
+
+    // grid
+    cctx.save();
+    cctx.strokeStyle = 'rgba(120,240,255,0.12)';
+    cctx.lineWidth = 1;
+    for (let i=1;i<=3;i++){
+      const y = (h/4)*i;
+      cctx.beginPath();
+      cctx.moveTo(10, y);
+      cctx.lineTo(w-10, y);
+      cctx.stroke();
+    }
+    cctx.restore();
+
+    const padX = 12;
+    const padY = 14;
+    const innerW = w - padX*2;
+    const innerH = h - padY*2;
+
+    const n = data.length;
+    cctx.save();
+    cctx.lineWidth = 3;
+    cctx.lineJoin = 'round';
+    cctx.lineCap = 'round';
+
+    // glow stroke
+    cctx.shadowColor = color;
+    cctx.shadowBlur = 16;
+    cctx.strokeStyle = color;
+    cctx.globalAlpha = 0.35;
+
+    cctx.beginPath();
+    for (let i=0;i<n;i++){
+      const t = i/(n-1);
+      const x = padX + innerW*t;
+      const v = (data[i]-minVal)/(maxVal-minVal);
+      const y = padY + innerH*(1 - clamp(v,0,1));
+      if (i===0) cctx.moveTo(x,y); else cctx.lineTo(x,y);
+    }
+    cctx.stroke();
+
+    // core stroke
+    cctx.shadowBlur = 0;
+    cctx.strokeStyle = 'rgba(100,240,255,0.85)';
+    cctx.globalAlpha = 0.85;
+    cctx.beginPath();
+    for (let i=0;i<n;i++){
+      const t = i/(n-1);
+      const x = padX + innerW*t;
+      const v = (data[i]-minVal)/(maxVal-minVal);
+      const y = padY + innerH*(1 - clamp(v,0,1));
+      if (i===0) cctx.moveTo(x,y); else cctx.lineTo(x,y);
+    }
+    cctx.stroke();
+
+    cctx.restore();
+  }
+
+  // ------------------------------
+  // Numeric simulation (updates every 400ms)
+  // ------------------------------
+  let lastEnergyTime = performance.now();
+
+  function stepNumbers(){
+    const now = performance.now();
+    const dtS = (now - lastEnergyTime) / 1000;
+    lastEnergyTime = now;
+
+    // smooth speed to target
+    const accel = (sim.targetSpeed - sim.speed) * 0.18;
+    sim.speed = clamp(sim.speed + accel, 0, 260);
+
+    const f = scenarioFactors(sim.scenario);
+
+    // base power ~ speed^1.15, plus noise
+    const base = 110 + Math.pow(sim.speed, 1.15) * 0.9;
+    const noise = rand(-18, 18);
+    sim.powerKW = clamp((base + noise) * f.powerMul, 60, 1200);
+
+    // regen occurs when slowing (negative accel) or random small bursts
+    const isSlowing = (sim.targetSpeed < sim.speed - 1);
+    const regenBase = isSlowing ? clamp((sim.speed - sim.targetSpeed) * 8, 0, 220) : rand(0, 35);
+    sim.regenKW = clamp(regenBase * f.regenMul, 0, 260);
+
+    // efficiency slightly drops with high power, scenario effect
+    const effDrop = (sim.powerKW - 250) * 0.006;
+    sim.efficiency = clamp(95 - effDrop + f.effDelta + rand(-0.6, 0.6), 82, 97);
+
+    // temperature rises with power, cools slowly
+    // Updated Thermal Model: HeatGen (Power loss) - Cooling (Convection)
+    const heatGen = (sim.powerKW / 800) * 8.0; 
+    const speedCooling = 1.0 + (sim.speed / 100);
+    const cooling = 0.08 * (sim.tempC - f.ambientC) * speedCooling;
+    sim.tempC += (heatGen - cooling) * dtS;
+
+    // voltage near constant, tiny wobble
+    sim.voltageKV = 25.0 + Math.sin(now/1800) * 0.15;
+
+    // current A approx = kW / kV (since kW/kV = A)
+    sim.currentA = clamp(sim.powerKW / sim.voltageKV, 10, 900);
+
+    // SOC drain by net power (power - regen)
+    // Battery Cold Penalty: Capacity drops / Resistance up at low temps
+    let tempFactor = 1.0;
+    if (sim.tempC < 10) tempFactor = 1.2; // Cold penalty
+    if (sim.tempC < 0) tempFactor = 1.5;
+
+    const netKW = Math.max(0, sim.powerKW - sim.regenKW*0.75);
+    const dth = dtS / 3600; // hours
+    const dMWh = (netKW * dth * tempFactor) / 1000; // kW -> MW, then *h => MWh
+    const socDrop = (dMWh / sim.capacityMWh) * 100;
+    sim.soc = clamp(sim.soc - socDrop, 0, 100);
+
+    // range estimate
+    const nominalRange100 = 530; // km at 100% in normal ops
+    sim.rangeKM = Math.round((sim.soc/100) * nominalRange100 * f.rangeMul);
+
+    // update history arrays
+    regenHist.push(sim.regenKW);
+    regenHist.shift();
+    powerHist.push(sim.powerKW);
+    powerHist.shift();
+
+    // HUD updates
+    capEl.textContent = sim.capacityMWh.toFixed(1);
+    socEl.textContent = sim.soc.toFixed(0);
+    rangeEl.textContent = sim.rangeKM.toString();
+    powerEl.textContent = sim.powerKW.toFixed(0);
+    effEl.textContent = sim.efficiency.toFixed(0);
+    tempEl.textContent = sim.tempC.toFixed(0);
+    voltEl.textContent = sim.voltageKV.toFixed(1);
+    currEl.textContent = sim.currentA.toFixed(0);
+
+    drainEl.textContent = `${socDrop.toFixed(3)}% / ${dtS.toFixed(2)}s`;
+
+    // status logic
+    const warning = sim.soc < 20;
+    const danger = sim.tempC > 80;
+
+    statusCard.classList.remove('normal','warning','danger');
+    if (danger) {
+      statusCard.classList.add('danger');
+      statusText.textContent = 'DANGER';
+    } else if (warning) {
+      statusCard.classList.add('warning');
+      statusText.textContent = 'WARNING';
+    } else {
+      statusCard.classList.add('normal');
+      statusText.textContent = 'NORMAL';
+    }
+
+    // redraw charts
+    drawBarChart(rctx, regenChart, regenHist, 260, 'rgba(100,240,255,0.90)');
+    drawLineChart(pctx, powerChart, powerHist, 0, 1200, 'rgba(100,240,255,0.90)');
+  }
+
+  setInterval(stepNumbers, 400);
+
+  // ------------------------------
+  // Main animation loop
+  // ------------------------------
+  let lastT = performance.now();
+  let tAcc = 0;
+
+  function frame(now){
+    const dt = Math.min(0.033, (now - lastT)/1000);
+    lastT = now;
+    if (running) tAcc += dt;
+
+    drawBackground();
+    drawCatenary(dt, tAcc);
+    drawTrack(dt);
+    drawTrain(tAcc);
+    drawWeather(dt); // Add weather drawing
+    drawGauge(tAcc);
+
+    requestAnimationFrame(frame);
+  }
+
+  // init UI display
+  sim.targetSpeed = Number(speedSlider.value);
+  speedRead.textContent = String(sim.targetSpeed);
+  targetSpeedEl.textContent = String(sim.targetSpeed);
+
+  requestAnimationFrame(frame);
+
+  // ------------------------------
+  // Tweakable parameters (quick notes)
+  // ------------------------------
+  // P.horizonY       : ตำแหน่งขอบฟ้า (ต่ำ/สูง)
+  // P.gamma          : ความโค้ง perspective (มาก = ไกลถี่ขึ้น)
+  // P.trackTopW/BotW : ความกว้างรางใกล้/ไกล (ปรับความสมจริง)
+  // P.zSpeed         : ความเร็ววัตถุวิ่งเข้ากล้อง (สัมพันธ์กับ speed)
+  // P.sleeperCount   : จำนวนหมอนรางในลูป
+  // P.ballastCount   : ความหนาแน่นหิน ballast (มากขึ้น = สมจริงขึ้นแต่หนักขึ้น)
+  // P.poleCount      : จำนวนเสา/คานในลูป
+})();
+</script>
+</body>
+</html>
